@@ -1,0 +1,73 @@
+{
+  "name": "eslint-plugin-electron-security",
+  "version": "0.1.0",
+  "description": "Baseline ESLint guardrails for common Electron security footguns.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "docs/rules",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "generate:readme": "tsx scripts/generate-readme.ts",
+    "check:generated": "tsx scripts/check-generated.ts",
+    "check:package-exports": "node --import tsx scripts/check-package-exports.ts",
+    "typecheck": "tsc --noEmit",
+    "test:rules": "vitest run tests/rules tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test": "pnpm run generate:readme && pnpm run build && pnpm run check:generated && pnpm run test:rules && pnpm run test:integration && pnpm run check:package-exports",
+    "verify": "pnpm run typecheck && pnpm run test"
+  },
+  "peerDependencies": {
+    "eslint": "^8.57.0 || ^9.0.0",
+    "typescript": ">=4.8.4 <6.1.0"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@typescript-eslint/parser": "^8.58.0",
+    "@typescript-eslint/utils": "^8.58.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "@typescript-eslint/rule-tester": "^8.58.0",
+    "eslint": "^9.39.1",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "keywords": [
+    "electron",
+    "eslint",
+    "eslintplugin",
+    "security"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/biw/eslint-plugin-electron-security.git"
+  }
+}
