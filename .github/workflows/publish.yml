@@ -1,4 +1,4 @@
-name: Publish
+name: Publish to npm
 
 on:
   push:
@@ -90,12 +90,10 @@ jobs:
       - name: Verify npm version
         run: npm --version
 
-      - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public --provenance
+      - name: Publish to npm with provenance
+        run: npm publish --provenance --access public
 
-      - name: Create GitHub release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.check-version.outputs.version }}
