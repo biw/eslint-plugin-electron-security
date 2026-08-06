@@ -1,21 +1,16 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 
 import { getRecommendationByRuleId } from '../recommendations';
 import { createRule } from '../utils/create-rule';
 import {
-  findWindowOptionValue,
   getJsxAttribute,
-  getStaticBooleanValue,
   getStaticJsxBooleanValue,
   getStaticJsxStringValue,
   getStaticStringValue,
   isWebViewElement,
 } from '../utils/ast';
-import {
-  collectElectronBindings,
-  getWindowOptionsObject,
-  isElectronWindowNewExpression,
-} from '../utils/electron';
+import { collectElectronBindings, isElectronWindowNewExpression } from '../utils/electron';
+import { resolveWindowOptionBoolean, resolveWindowOptionsObject } from '../utils/resolve';
 import { isRemoteUrl } from '../utils/url';
 
 const recommendation = getRecommendationByRuleId('no-node-integration-for-remote-content');
@@ -25,17 +20,21 @@ const REMOTE_NODE_OPTIONS = [
   'nodeIntegrationInWorker',
 ] as const;
 
-function getUnsafeNodeIntegrationNode(node: TSESTree.NewExpression): TSESTree.Node | undefined {
-  const options = getWindowOptionsObject(node);
+function getUnsafeNodeIntegrationNode(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  node: TSESTree.NewExpression,
+): TSESTree.Node | undefined {
+  const options = resolveWindowOptionsObject(sourceCode, node);
 
   if (!options) {
     return undefined;
   }
 
   for (const optionName of REMOTE_NODE_OPTIONS) {
-    const optionValue = findWindowOptionValue(options, optionName);
-    if (getStaticBooleanValue(optionValue) === true) {
-      return optionValue;
+    const resolved = resolveWindowOptionBoolean(sourceCode, options, optionName);
+
+    if (resolved?.value === true) {
+      return resolved.node;
     }
   }
 
@@ -43,6 +42,7 @@ function getUnsafeNodeIntegrationNode(node: TSESTree.NewExpression): TSESTree.No
 }
 
 function getTrackedUnsafeNode(
+  sourceCode: Readonly<TSESLint.SourceCode>,
   node: TSESTree.Expression,
   trackedWindows: Map<string, TSESTree.Node>,
   bindings: ReturnType<typeof collectElectronBindings>,
@@ -52,7 +52,7 @@ function getTrackedUnsafeNode(
   }
 
   if (node.type === AST_NODE_TYPES.NewExpression && isElectronWindowNewExpression(node, bindings)) {
-    return getUnsafeNodeIntegrationNode(node);
+    return getUnsafeNodeIntegrationNode(sourceCode, node);
   }
 
   if (
@@ -67,7 +67,7 @@ function getTrackedUnsafeNode(
     }
 
     if (owner.type === AST_NODE_TYPES.NewExpression && isElectronWindowNewExpression(owner, bindings)) {
-      return getUnsafeNodeIntegrationNode(owner);
+      return getUnsafeNodeIntegrationNode(sourceCode, owner);
     }
   }
 
@@ -105,7 +105,7 @@ export default createRule({
           return;
         }
 
-        const unsafeNode = getUnsafeNodeIntegrationNode(node.init);
+        const unsafeNode = getUnsafeNodeIntegrationNode(context.sourceCode, node.init);
         if (unsafeNode) {
           trackedWindows.set(node.id.name, unsafeNode);
         }
@@ -120,7 +120,7 @@ export default createRule({
           return;
         }
 
-        const unsafeNode = getUnsafeNodeIntegrationNode(node.right);
+        const unsafeNode = getUnsafeNodeIntegrationNode(context.sourceCode, node.right);
         if (unsafeNode) {
           trackedWindows.set(node.left.name, unsafeNode);
         }
@@ -140,7 +140,7 @@ export default createRule({
           return;
         }
 
-        const unsafeNode = getTrackedUnsafeNode(node.callee.object, trackedWindows, bindings);
+        const unsafeNode = getTrackedUnsafeNode(context.sourceCode, node.callee.object, trackedWindows, bindings);
 
         if (unsafeNode && !reportedNodes.has(unsafeNode)) {
           reportedNodes.add(unsafeNode);

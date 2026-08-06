@@ -1,9 +1,13 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+
+import { getDeclarationNode, getLatestBindingValue, unwrapExpression } from './functions';
 
 export interface ElectronBindings {
   BrowserWindow: Set<string>;
   WebContentsView: Set<string>;
   contextBridge: Set<string>;
+  /** Local bindings indexed by their original named Electron export. */
+  importedApis: Map<string, Set<string>>;
   electronApis: Set<string>;
   ipcMain: Set<string>;
   ipcRenderer: Set<string>;
@@ -16,12 +20,31 @@ function createBindings(): ElectronBindings {
     BrowserWindow: new Set<string>(),
     WebContentsView: new Set<string>(),
     contextBridge: new Set<string>(),
+    importedApis: new Map<string, Set<string>>(),
     electronApis: new Set<string>(),
     ipcMain: new Set<string>(),
     ipcRenderer: new Set<string>(),
     namespaces: new Set<string>(),
     shell: new Set<string>(),
   };
+}
+
+function recordElectronApiBinding(
+  bindings: ElectronBindings,
+  importedName: string,
+  localName: string,
+): void {
+  bindings.electronApis.add(localName);
+
+  const importedBindings = bindings.importedApis.get(importedName) ?? new Set<string>();
+  importedBindings.add(localName);
+  bindings.importedApis.set(importedName, importedBindings);
+
+  const dedicatedBinding = bindings[importedName as keyof ElectronBindings];
+
+  if (dedicatedBinding instanceof Set) {
+    dedicatedBinding.add(localName);
+  }
 }
 
 function isRequireCall(node: TSESTree.Expression | null): boolean {
@@ -48,11 +71,7 @@ export function collectElectronBindings(program: TSESTree.Program): ElectronBind
               ? specifier.imported.name
               : String(specifier.imported.value);
 
-          bindings.electronApis.add(specifier.local.name);
-
-          if (importedName in bindings) {
-            bindings[importedName as keyof Omit<ElectronBindings, 'namespaces'>].add(specifier.local.name);
-          }
+          recordElectronApiBinding(bindings, importedName, specifier.local.name);
         } else if (specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
           bindings.namespaces.add(specifier.local.name);
         }
@@ -86,16 +105,200 @@ export function collectElectronBindings(program: TSESTree.Program): ElectronBind
         const localName =
           property.value.type === AST_NODE_TYPES.Identifier ? property.value.name : importedName;
 
-        bindings.electronApis.add(localName);
-
-        if (importedName in bindings) {
-          bindings[importedName as keyof Omit<ElectronBindings, 'namespaces'>].add(localName);
-        }
+        recordElectronApiBinding(bindings, importedName, localName);
       }
     }
   }
 
   return bindings;
+}
+
+/**
+ * True when an expression resolves to one specific Electron named export.
+ *
+ * Unlike the dedicated binding sets above, this works for every Electron API
+ * and preserves the exported name when it is imported under an alias.
+ */
+export function isElectronNamedApiExpression(
+  node: TSESTree.Expression,
+  apiName: string,
+  bindings: ElectronBindings,
+): boolean {
+  if (node.type === AST_NODE_TYPES.Identifier) {
+    return bindings.importedApis.get(apiName)?.has(node.name) ?? false;
+  }
+
+  if (node.type !== AST_NODE_TYPES.MemberExpression) {
+    return false;
+  }
+
+  return (
+    node.object.type === AST_NODE_TYPES.Identifier &&
+    bindings.namespaces.has(node.object.name) &&
+    getMemberPropertyName(node) === apiName
+  );
+}
+
+/** True for Electron's `session` module itself, including aliased imports. */
+export function isElectronSessionModuleExpression(
+  node: TSESTree.Expression,
+  bindings: ElectronBindings,
+): boolean {
+  return isElectronNamedApiExpression(node, 'session', bindings);
+}
+
+const SESSION_FACTORY_METHODS = new Set(['fromPartition', 'fromPath']);
+
+function isElectronWindowExpression(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  node: TSESTree.Expression,
+  bindings: ElectronBindings,
+  seenDeclarations = new Set<TSESTree.Node>(),
+): boolean {
+  const expression = unwrapExpression(node);
+
+  if (expression.type === AST_NODE_TYPES.NewExpression) {
+    return isElectronWindowNewExpression(expression, bindings);
+  }
+
+  if (expression.type !== AST_NODE_TYPES.Identifier) {
+    return false;
+  }
+
+  const declaration = getDeclarationNode(sourceCode, expression);
+
+  if (
+    !declaration ||
+    seenDeclarations.has(declaration) ||
+    declaration.type !== AST_NODE_TYPES.VariableDeclarator
+  ) {
+    return false;
+  }
+
+  const value = getLatestBindingValue(sourceCode, expression) ?? declaration.init;
+
+  if (!value) {
+    return false;
+  }
+
+  const nextSeen = new Set(seenDeclarations);
+  nextSeen.add(declaration);
+
+  return isElectronWindowExpression(sourceCode, value, bindings, nextSeen);
+}
+
+/**
+ * True for a WebContents owned by an Electron BrowserWindow or WebContentsView.
+ * Local aliases are followed at their latest write so the resolver recognises
+ * `win.webContents.session` and `const contents = win.webContents`.
+ */
+function isElectronWebContentsExpression(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  node: TSESTree.Expression,
+  bindings: ElectronBindings,
+  seenDeclarations = new Set<TSESTree.Node>(),
+): boolean {
+  const expression = unwrapExpression(node);
+
+  if (
+    expression.type === AST_NODE_TYPES.MemberExpression &&
+    getMemberPropertyName(expression) === 'webContents' &&
+    expression.object.type !== AST_NODE_TYPES.Super
+  ) {
+    return isElectronWindowExpression(sourceCode, expression.object, bindings);
+  }
+
+  if (expression.type !== AST_NODE_TYPES.Identifier) {
+    return false;
+  }
+
+  const declaration = getDeclarationNode(sourceCode, expression);
+
+  if (
+    !declaration ||
+    seenDeclarations.has(declaration) ||
+    declaration.type !== AST_NODE_TYPES.VariableDeclarator
+  ) {
+    return false;
+  }
+
+  const value = getLatestBindingValue(sourceCode, expression) ?? declaration.init;
+
+  if (!value) {
+    return false;
+  }
+
+  const nextSeen = new Set(seenDeclarations);
+  nextSeen.add(declaration);
+
+  return isElectronWebContentsExpression(sourceCode, value, bindings, nextSeen);
+}
+
+/**
+ * True for a Session object that can be traced locally from Electron's
+ * `session` module or an Electron WebContents. Aliases are followed at their
+ * latest write, so both const and canonical mutable handles remain recognisable.
+ */
+export function isElectronSessionExpression(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  node: TSESTree.Expression,
+  bindings: ElectronBindings,
+  seenDeclarations = new Set<TSESTree.Node>(),
+): boolean {
+  const expression = unwrapExpression(node);
+
+  if (
+    expression.type === AST_NODE_TYPES.MemberExpression &&
+    getMemberPropertyName(expression) === 'session' &&
+    expression.object.type !== AST_NODE_TYPES.Super &&
+    isElectronWebContentsExpression(sourceCode, expression.object, bindings)
+  ) {
+    return true;
+  }
+
+  if (
+    expression.type === AST_NODE_TYPES.MemberExpression &&
+    getMemberPropertyName(expression) === 'defaultSession' &&
+    expression.object.type !== AST_NODE_TYPES.Super &&
+    isElectronSessionModuleExpression(expression.object, bindings)
+  ) {
+    return true;
+  }
+
+  if (
+    expression.type === AST_NODE_TYPES.CallExpression &&
+    expression.callee.type === AST_NODE_TYPES.MemberExpression &&
+    SESSION_FACTORY_METHODS.has(getMemberPropertyName(expression.callee) ?? '') &&
+    expression.callee.object.type !== AST_NODE_TYPES.Super &&
+    isElectronSessionModuleExpression(expression.callee.object, bindings)
+  ) {
+    return true;
+  }
+
+  if (expression.type !== AST_NODE_TYPES.Identifier) {
+    return false;
+  }
+
+  const declaration = getDeclarationNode(sourceCode, expression);
+
+  if (
+    !declaration ||
+    seenDeclarations.has(declaration) ||
+    declaration.type !== AST_NODE_TYPES.VariableDeclarator
+  ) {
+    return false;
+  }
+
+  const value = getLatestBindingValue(sourceCode, expression) ?? declaration.init;
+
+  if (!value) {
+    return false;
+  }
+
+  const nextSeen = new Set(seenDeclarations);
+  nextSeen.add(declaration);
+
+  return isElectronSessionExpression(sourceCode, value, bindings, nextSeen);
 }
 
 export function getMemberPropertyName(node: TSESTree.MemberExpression): string | undefined {
@@ -228,16 +431,6 @@ export function isElectronWindowNewExpression(
   }
 
   return false;
-}
-
-export function getWindowOptionsObject(node: TSESTree.NewExpression): TSESTree.ObjectExpression | undefined {
-  const firstArgument = node.arguments[0];
-
-  if (!firstArgument || firstArgument.type !== AST_NODE_TYPES.ObjectExpression) {
-    return undefined;
-  }
-
-  return firstArgument;
 }
 
 export function isTrackedLoadUrlTarget(

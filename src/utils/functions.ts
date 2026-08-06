@@ -112,6 +112,68 @@ export function getDeclarationNode(
   }
 }
 
+function getResolvedVariable(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  identifier: TSESTree.Identifier,
+) {
+  let scope = sourceCode.getScope(identifier);
+  let reference = scope.references.find((candidate) => candidate.identifier === identifier);
+
+  while (!reference && scope.upper) {
+    scope = scope.upper;
+    reference = scope.references.find((candidate) => candidate.identifier === identifier);
+  }
+
+  return reference?.resolved;
+}
+
+/** Returns the expression most recently written to a binding before this use. */
+export function getLatestBindingValue(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  identifier: TSESTree.Identifier,
+): TSESTree.Expression | undefined {
+  const variable = getResolvedVariable(sourceCode, identifier);
+  let latest: { expression: TSESTree.Expression; offset: number } | undefined;
+
+  for (const candidate of variable?.references ?? []) {
+    if (
+      !candidate.isWrite() ||
+      !candidate.writeExpr ||
+      candidate.identifier.range[0] >= identifier.range[0]
+    ) {
+      continue;
+    }
+
+    const offset = candidate.identifier.range[0];
+
+    if (!latest || offset > latest.offset) {
+      latest = {
+        expression: candidate.writeExpr as TSESTree.Expression,
+        offset,
+      };
+    }
+  }
+
+  return latest?.expression;
+}
+
+/** True when the same binding is written within the given source range. */
+export function hasBindingWriteBetween(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  identifier: TSESTree.Identifier,
+  startOffset: number,
+  endOffset: number,
+): boolean {
+  const variable = getResolvedVariable(sourceCode, identifier);
+
+  return (variable?.references ?? []).some(
+    (candidate) =>
+      candidate.isWrite() &&
+      candidate.identifier.range[0] >= startOffset &&
+      candidate.identifier.range[0] < endOffset,
+  );
+}
+
 export function resolveFunctionLike(
   sourceCode: Readonly<TSESLint.SourceCode>,
   node: TSESTree.Expression,

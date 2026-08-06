@@ -1,13 +1,7 @@
 import { getRecommendationByRuleId } from '../recommendations';
 import { createRule } from '../utils/create-rule';
-import {
-  findWindowOptionValue,
-  getJsxAttribute,
-  getStaticBooleanValue,
-  getStaticJsxBooleanValue,
-  isWebViewElement,
-} from '../utils/ast';
-import { collectElectronBindings, getWindowOptionsObject, isElectronWindowNewExpression } from '../utils/electron';
+import { getJsxAttribute, getStaticJsxBooleanValue, isWebViewElement } from '../utils/ast';
+import { createWindowOptionVisitor } from '../utils/window-option-rule';
 
 const recommendation = getRecommendationByRuleId('no-web-security-disabled');
 
@@ -25,27 +19,12 @@ export default createRule({
   },
   defaultOptions: [],
   create(context) {
-    let bindings = collectElectronBindings(context.sourceCode.ast);
-
     return {
-      Program(node) {
-        bindings = collectElectronBindings(node);
-      },
-      NewExpression(node) {
-        if (!isElectronWindowNewExpression(node, bindings)) {
-          return;
-        }
-
-        const options = getWindowOptionsObject(node);
-        const value = options ? findWindowOptionValue(options, 'webSecurity') : undefined;
-
-        if (getStaticBooleanValue(value) === false) {
-          context.report({
-            node: value ?? node,
-            messageId: 'disabledWebSecurity',
-          });
-        }
-      },
+      ...createWindowOptionVisitor(context, {
+        optionNames: ['webSecurity'],
+        unsafeValue: false,
+        messageId: 'disabledWebSecurity',
+      }),
       JSXOpeningElement(node) {
         if (!isWebViewElement(node)) {
           return;

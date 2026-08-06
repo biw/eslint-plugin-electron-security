@@ -8,10 +8,10 @@ const require = createRequire(import.meta.url);
 const exported = require('../../dist/index.cjs');
 const plugin: typeof import('../../src/index').default = exported.default ?? exported;
 
-async function lintFixture(relativePath: string) {
+async function lintFixture(relativePath: string, configName: 'recommended' | 'strict' = 'recommended') {
   const code = await readFile(new URL(`../fixtures/${relativePath}`, import.meta.url), 'utf8');
   const eslint = new ESLint({
-    overrideConfig: [plugin.configs.recommended],
+    overrideConfig: [plugin.configs[configName]],
     overrideConfigFile: true,
   });
 
@@ -49,6 +49,46 @@ describe('recommended config adoption', () => {
 
   it('ignores deliberately out-of-scope dynamic cases', async () => {
     const [result] = await lintFixture('dynamic-main.ts');
+    expect(result.messages).toHaveLength(0);
+  });
+
+  it('grades provable rules as errors and inferred rules as warnings', async () => {
+    const [result] = await lintFixture('unsafe-main.ts');
+
+    const severityByRule = new Map(
+      result.messages.map((message) => [message.ruleId, message.severity]),
+    );
+
+    // Provable: an unsafe literal is right there in the source.
+    expect(severityByRule.get('electron-security/no-sandbox-disabled')).toBe(2);
+    expect(severityByRule.get('electron-security/no-context-isolation-disabled')).toBe(2);
+
+    // Inferred: reported because a mitigation was not recognised.
+    expect(severityByRule.get('electron-security/require-ipc-sender-validation')).toBe(1);
+    expect(severityByRule.get('electron-security/require-navigation-allowlist')).toBe(1);
+
+    expect(result.errorCount).toBeGreaterThan(0);
+    expect(result.warningCount).toBeGreaterThan(0);
+  });
+
+  it('promotes every rule to an error under strict', async () => {
+    const [result] = await lintFixture('unsafe-main.ts', 'strict');
+
+    expect(result.warningCount).toBe(0);
+    expect(result.messages.every((message) => message.severity === 2)).toBe(true);
+  });
+
+  it('keeps strict and recommended reporting the same findings', async () => {
+    const [recommended] = await lintFixture('unsafe-main.ts');
+    const [strict] = await lintFixture('unsafe-main.ts', 'strict');
+
+    expect(strict.messages.map((message) => message.ruleId).sort()).toEqual(
+      recommended.messages.map((message) => message.ruleId).sort(),
+    );
+  });
+
+  it('stays silent on the safe fixture under strict too', async () => {
+    const [result] = await lintFixture('safe-main.ts', 'strict');
     expect(result.messages).toHaveLength(0);
   });
 

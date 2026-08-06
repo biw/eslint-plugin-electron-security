@@ -16,18 +16,29 @@ function escapeTableCell(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('|', '\\|');
 }
 
+function getSeverityCell(recommendation: (typeof recommendations)[number]): string {
+  if (recommendation.requiresTypeChecking) {
+    return '`recommended-type-checked`';
+  }
+
+  return recommendation.confidence === 'inferred'
+    ? '`recommended` (warn) · `strict` (error)'
+    : '`recommended` (error)';
+}
+
 export function renderRuleMatrix(): string {
   const implementedRecommendations = recommendations.filter((recommendation) => recommendation.docsPath);
   const header = [
-    '| Rule | Covers | Config |',
-    '| --- | --- | --- |',
+    '| Rule | Covers | Confidence | Config |',
+    '| --- | --- | --- | --- |',
   ];
 
   const rows = implementedRecommendations.map((recommendation) =>
     [
       getRuleCell(recommendation.ruleId, recommendation.docsPath),
       escapeTableCell(recommendation.title),
-      recommendation.requiresTypeChecking ? '`recommended-type-checked`' : '`recommended`',
+      recommendation.confidence ?? '—',
+      getSeverityCell(recommendation),
     ].join(' | '),
   );
 
