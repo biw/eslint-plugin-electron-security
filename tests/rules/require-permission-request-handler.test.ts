@@ -231,6 +231,26 @@ ruleTester.run('require-permission-request-handler', rule, {
         mainWindow.loadURL('https://example.com');
       `,
     },
+    {
+      name: 'namespace-imported session with a handler satisfies the requirement',
+      code: `
+        import * as electron from 'electron';
+        electron.session.defaultSession.setPermissionRequestHandler((wc, permission, callback) => {
+          callback(false);
+        });
+        mainWindow.loadURL('https://example.com');
+      `,
+    },
+    {
+      name: 'require()-aliased session with a handler satisfies the requirement',
+      code: `
+        const { session: ses } = require('electron');
+        ses.defaultSession.setPermissionRequestHandler((wc, permission, callback) => {
+          callback(false);
+        });
+        mainWindow.loadURL('https://example.com');
+      `,
+    },
   ],
   invalid: [
     {

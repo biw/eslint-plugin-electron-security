@@ -119,6 +119,14 @@ ruleTester.run('require-csp', rule, {
       `,
     },
     {
+      name: 'the first script-src wins when a policy repeats the directive',
+      code: `
+        const headers = {
+          'Content-Security-Policy': "script-src 'self'; script-src * 'unsafe-inline'",
+        };
+      `,
+    },
+    {
       name: 'a mutable policy binding is not resolved from its stale initializer',
       code: `
         let policy = "default-src * 'unsafe-inline'";
@@ -240,6 +248,38 @@ ruleTester.run('require-csp', rule, {
       errors: [{ messageId: 'missingCspHeader' }],
     },
     {
+      name: 'the callback details parameter may use a name other than details',
+      code: `
+        import { session } from 'electron';
+        session.defaultSession.webRequest.onHeadersReceived((response, callback) => {
+          callback({
+            responseHeaders: { ...response.responseHeaders, 'X-Frame-Options': ['DENY'] },
+          });
+        });
+      `,
+      errors: [{ messageId: 'missingCspHeader' }],
+    },
+    {
+      name: 'namespace-imported Electron session is recognised',
+      code: `
+        import * as electron from 'electron';
+        electron.session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+          callback({ responseHeaders: { ...details.responseHeaders, 'X-Frame-Options': ['DENY'] } });
+        });
+      `,
+      errors: [{ messageId: 'missingCspHeader' }],
+    },
+    {
+      name: 'require()-aliased Electron session is recognised',
+      code: `
+        const { session: ses } = require('electron');
+        ses.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+          callback({ responseHeaders: { ...details.responseHeaders, 'X-Frame-Options': ['DENY'] } });
+        });
+      `,
+      errors: [{ messageId: 'missingCspHeader' }],
+    },
+    {
       name: 'a mutable BrowserWindow webContents session response handler without CSP',
       code: `
         import { BrowserWindow } from 'electron';
@@ -283,6 +323,15 @@ ruleTester.run('require-csp', rule, {
             responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [policy] },
           });
         });
+      `,
+      errors: [{ messageId: 'unsafeCspDirective' }],
+    },
+    {
+      name: 'a chain of local constants resolves to an unsafe policy',
+      code: `
+        const rawPolicy = "default-src 'self'; script-src 'unsafe-eval'";
+        const policy = rawPolicy;
+        headers['Content-Security-Policy'] = policy;
       `,
       errors: [{ messageId: 'unsafeCspDirective' }],
     },

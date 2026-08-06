@@ -101,4 +101,78 @@ describe('recommended config adoption', () => {
       'electron-security/no-webview-allowpopups',
     ]);
   });
+
+  it('reports the new main-process security rules through the published config', async () => {
+    const [result] = await lintFixture('unsafe-advanced-main.ts');
+    const ruleIds = result.messages.map((message) => message.ruleId).sort();
+
+    expect(ruleIds).toEqual([
+      'electron-security/require-csp',
+      'electron-security/require-permission-request-handler',
+      'electron-security/require-secure-fuses',
+    ]);
+
+    const severityByRule = new Map(
+      result.messages.map((message) => [message.ruleId, message.severity]),
+    );
+
+    expect(severityByRule.get('electron-security/require-csp')).toBe(1);
+    expect(severityByRule.get('electron-security/require-permission-request-handler')).toBe(1);
+    expect(severityByRule.get('electron-security/require-secure-fuses')).toBe(2);
+  });
+
+  it('keeps hardened CSP, permission, and fuse configuration silent', async () => {
+    const [result] = await lintFixture('safe-advanced-main.ts');
+
+    expect(result.messages).toHaveLength(0);
+  });
+
+  it('promotes every advanced finding to an error under strict', async () => {
+    const [recommended] = await lintFixture('unsafe-advanced-main.ts');
+    const [strict] = await lintFixture('unsafe-advanced-main.ts', 'strict');
+
+    expect(strict.messages.map((message) => message.ruleId).sort()).toEqual(
+      recommended.messages.map((message) => message.ruleId).sort(),
+    );
+    expect(strict.messages.every((message) => message.severity === 2)).toBe(true);
+  });
+
+  it('applies configured factories through the published package', async () => {
+    const eslint = new ESLint({
+      overrideConfig: [
+        plugin.configs.recommended,
+        {
+          rules: {
+            'electron-security/require-factory': [
+              'error',
+              {
+                factories: [
+                  {
+                    api: 'BrowserView',
+                    use: 'createSecureView',
+                    allowIn: ['src/security/views.ts'],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      overrideConfigFile: true,
+    });
+
+    const [blocked] = await eslint.lintText(
+      "const { BrowserView: View } = require('electron'); new View();",
+      { filePath: 'src/main.ts' },
+    );
+    const [allowed] = await eslint.lintText(
+      "const { BrowserView: View } = require('electron'); new View();",
+      { filePath: 'src/security/views.ts' },
+    );
+
+    expect(blocked.messages.map((message) => message.ruleId)).toEqual([
+      'electron-security/require-factory',
+    ]);
+    expect(allowed.messages).toHaveLength(0);
+  });
 });

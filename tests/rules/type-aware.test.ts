@@ -39,6 +39,19 @@ typedRuleTester.run('require-ipc-sender-validation (type-aware)', requireIpcSend
   ],
   invalid: [
     {
+      name: 'an assertion inside a conditional does not validate the whole handler',
+      code: `
+        import { ipcMain } from 'electron';
+        declare const maybeValidate: boolean;
+        declare function frobnicate(event: unknown): asserts event is { senderFrame: unknown };
+        ipcMain.handle('conditional-assertion', (event, payload) => {
+          if (maybeValidate) frobnicate(event);
+          return payload;
+        });
+      `,
+      errors: [{ messageId: 'missingSenderValidation' }],
+    },
+    {
       name: 'an assertion after payload processing does not validate earlier work',
       code: `
         import { ipcMain } from 'electron';
