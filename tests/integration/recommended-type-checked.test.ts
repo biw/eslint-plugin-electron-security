@@ -23,7 +23,8 @@ async function lintFixture(relativePath: string) {
 
 describe('recommended-type-checked config adoption', () => {
   it('publishes equivalent rule and config names for ESM consumers', async () => {
-    const esmExported = await import('../../dist/index.js');
+    const esmEntrypoint = new URL('../../dist/index.js', import.meta.url).href;
+    const esmExported = await import(esmEntrypoint);
     const esmPlugin: typeof plugin = esmExported.default ?? esmExported;
 
     expect(Object.keys(esmPlugin.rules).sort()).toEqual(Object.keys(plugin.rules).sort());
