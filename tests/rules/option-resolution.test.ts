@@ -82,6 +82,26 @@ ruleTester.run('no-sandbox-disabled (resolution)', noSandboxDisabled, {
         new BrowserWindow({ webPreferences: prefs });
       `,
     },
+    {
+      name: 'an option bag passed through a const alias may have escaped',
+      code: `
+        import { BrowserWindow } from 'electron';
+        declare function harden(options: { sandbox: boolean }): void;
+        const prefs = { sandbox: false };
+        const alias = prefs;
+        harden(alias);
+        new BrowserWindow({ webPreferences: prefs });
+      `,
+    },
+    {
+      name: 'a method call on an option bag may mutate it',
+      code: `
+        import { BrowserWindow } from 'electron';
+        const prefs = { sandbox: false };
+        prefs.applySecurityDefaults();
+        new BrowserWindow({ webPreferences: prefs });
+      `,
+    },
   ],
   invalid: [
     {

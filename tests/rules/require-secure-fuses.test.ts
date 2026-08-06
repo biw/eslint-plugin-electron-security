@@ -69,6 +69,15 @@ ruleTester.run('require-secure-fuses', rule, {
         flipFuses('/path/to/app', { RunAsNode: true });
       `,
     },
+    {
+      name: 'an opaque later spread prevents a stale fuse finding',
+      code: `
+        import { flipFuses } from '@electron/fuses';
+        declare const override: object;
+        const config = { RunAsNode: true, ...override, version: 1 };
+        await flipFuses('/path/to/app', config);
+      `,
+    },
   ],
   invalid: [
     {
@@ -156,6 +165,33 @@ ruleTester.run('require-secure-fuses', rule, {
         import { flipFuses, FuseV1Options } from '@electron/fuses';
         const unsafe = { [FuseV1Options.RunAsNode]: true, version: 1 };
         await flipFuses('/path/to/app', unsafe);
+      `,
+      errors: [{ messageId: 'fuseMustBeDisabled' }],
+    },
+    {
+      name: 'aliased flipFuses import remains recognisable',
+      code: `
+        import { flipFuses as flip } from '@electron/fuses';
+        const config = { RunAsNode: true, version: 1 };
+        await flip('/path/to/app', config);
+      `,
+      errors: [{ messageId: 'fuseMustBeDisabled' }],
+    },
+    {
+      name: 'namespace flipFuses import remains recognisable',
+      code: `
+        import * as fuses from '@electron/fuses';
+        const config = { RunAsNode: true, version: 1 };
+        await fuses.flipFuses('/path/to/app', config);
+      `,
+      errors: [{ messageId: 'fuseMustBeDisabled' }],
+    },
+    {
+      name: 'require()-aliased flipFuses remains recognisable',
+      code: `
+        const { flipFuses: flip } = require('@electron/fuses');
+        const config = { RunAsNode: true, version: 1 };
+        await flip('/path/to/app', config);
       `,
       errors: [{ messageId: 'fuseMustBeDisabled' }],
     },

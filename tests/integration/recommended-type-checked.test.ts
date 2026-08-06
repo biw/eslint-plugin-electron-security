@@ -22,6 +22,17 @@ async function lintFixture(relativePath: string) {
 }
 
 describe('recommended-type-checked config adoption', () => {
+  it('publishes equivalent rule and config names for ESM consumers', async () => {
+    const esmExported = await import('../../dist/index.js');
+    const esmPlugin: typeof plugin = esmExported.default ?? esmExported;
+
+    expect(Object.keys(esmPlugin.rules).sort()).toEqual(Object.keys(plugin.rules).sort());
+    expect(Object.keys(esmPlugin.configs).sort()).toEqual(Object.keys(plugin.configs).sort());
+    expect(Object.keys(esmPlugin.configs.recommended.rules).sort()).toEqual(
+      Object.keys(plugin.configs.recommended.rules).sort(),
+    );
+  });
+
   it('reports raw Electron API exposure in preload code', async () => {
     const [result] = await lintFixture('unsafe-preload.ts');
     const ruleIds = result.messages.map((message) => message.ruleId);
