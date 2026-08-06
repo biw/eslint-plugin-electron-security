@@ -1,7 +1,9 @@
+import { TSESTree } from '@typescript-eslint/utils';
+
 import { getRecommendationByRuleId } from '../recommendations';
 import { createRule } from '../utils/create-rule';
-import { findWindowOptionValue } from '../utils/ast';
-import { collectElectronBindings, getWindowOptionsObject, isElectronWindowNewExpression } from '../utils/electron';
+import { collectElectronBindings, isElectronWindowNewExpression } from '../utils/electron';
+import { resolveWindowOption, resolveWindowOptionsObject } from '../utils/resolve';
 
 const recommendation = getRecommendationByRuleId('no-enable-blink-features');
 
@@ -20,6 +22,7 @@ export default createRule({
   defaultOptions: [],
   create(context) {
     let bindings = collectElectronBindings(context.sourceCode.ast);
+    const reported = new Set<TSESTree.Node>();
 
     return {
       Program(node) {
@@ -30,12 +33,18 @@ export default createRule({
           return;
         }
 
-        const options = getWindowOptionsObject(node);
-        const value = options ? findWindowOptionValue(options, 'enableBlinkFeatures') : undefined;
+        const options = resolveWindowOptionsObject(context.sourceCode, node);
 
-        if (value) {
+        if (!options) {
+          return;
+        }
+
+        const resolution = resolveWindowOption(context.sourceCode, options, 'enableBlinkFeatures');
+
+        if (resolution.kind === 'found' && !reported.has(resolution.node)) {
+          reported.add(resolution.node);
           context.report({
-            node: value,
+            node: resolution.node,
             messageId: 'blinkFeatures',
           });
         }

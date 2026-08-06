@@ -1,7 +1,6 @@
 import { getRecommendationByRuleId } from '../recommendations';
 import { createRule } from '../utils/create-rule';
-import { findWindowOptionValue, getStaticBooleanValue } from '../utils/ast';
-import { collectElectronBindings, getWindowOptionsObject, isElectronWindowNewExpression } from '../utils/electron';
+import { createWindowOptionVisitor } from '../utils/window-option-rule';
 
 const recommendation = getRecommendationByRuleId('no-allow-running-insecure-content');
 
@@ -19,27 +18,10 @@ export default createRule({
   },
   defaultOptions: [],
   create(context) {
-    let bindings = collectElectronBindings(context.sourceCode.ast);
-
-    return {
-      Program(node) {
-        bindings = collectElectronBindings(node);
-      },
-      NewExpression(node) {
-        if (!isElectronWindowNewExpression(node, bindings)) {
-          return;
-        }
-
-        const options = getWindowOptionsObject(node);
-        const value = options ? findWindowOptionValue(options, 'allowRunningInsecureContent') : undefined;
-
-        if (getStaticBooleanValue(value) === true) {
-          context.report({
-            node: value ?? node,
-            messageId: 'insecureContent',
-          });
-        }
-      },
-    };
+    return createWindowOptionVisitor(context, {
+      optionNames: ['allowRunningInsecureContent'],
+      unsafeValue: true,
+      messageId: 'insecureContent',
+    });
   },
 });
