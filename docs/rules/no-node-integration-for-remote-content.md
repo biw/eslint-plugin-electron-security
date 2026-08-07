@@ -56,3 +56,21 @@ win.loadURL('https://example.com');
 - Dynamic URLs
 - Cross-file helper chasing
 - Trust analysis for custom protocols
+
+## How Options Are Resolved
+
+The option bag does not have to be an inline literal. Within a single file the
+rule follows `const` bindings and object spreads, so this is reported:
+
+```ts
+const prefs = { nodeIntegration: true };
+new BrowserWindow({ webPreferences: prefs });
+```
+
+The rule stays silent where it cannot be certain:
+
+- a `let` binding, which could be reassigned before the window is built
+- an option bag passed to unknown code, which could retain or mutate it
+- `{ ...opaque }` appearing after the option, since the spread could override it
+- a computed key that is not a literal
+- an option bag imported from another module

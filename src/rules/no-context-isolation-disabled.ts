@@ -1,7 +1,6 @@
 import { getRecommendationByRuleId } from '../recommendations';
 import { createRule } from '../utils/create-rule';
-import { findWindowOptionValue, getStaticBooleanValue } from '../utils/ast';
-import { collectElectronBindings, getWindowOptionsObject, isElectronWindowNewExpression } from '../utils/electron';
+import { createWindowOptionVisitor } from '../utils/window-option-rule';
 
 const recommendation = getRecommendationByRuleId('no-context-isolation-disabled');
 
@@ -19,27 +18,10 @@ export default createRule({
   },
   defaultOptions: [],
   create(context) {
-    let bindings = collectElectronBindings(context.sourceCode.ast);
-
-    return {
-      Program(node) {
-        bindings = collectElectronBindings(node);
-      },
-      NewExpression(node) {
-        if (!isElectronWindowNewExpression(node, bindings)) {
-          return;
-        }
-
-        const options = getWindowOptionsObject(node);
-        const value = options ? findWindowOptionValue(options, 'contextIsolation') : undefined;
-
-        if (getStaticBooleanValue(value) === false) {
-          context.report({
-            node: value ?? node,
-            messageId: 'disabledContextIsolation',
-          });
-        }
-      },
-    };
+    return createWindowOptionVisitor(context, {
+      optionNames: ['contextIsolation'],
+      unsafeValue: false,
+      messageId: 'disabledContextIsolation',
+    });
   },
 });

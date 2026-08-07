@@ -8,10 +8,10 @@ const require = createRequire(import.meta.url);
 const exported = require('../../dist/index.cjs');
 const plugin: typeof import('../../src/index').default = exported.default ?? exported;
 
-async function lintFixture(relativePath: string) {
+async function lintFixture(relativePath: string, configName: 'recommended' | 'strict' = 'recommended') {
   const code = await readFile(new URL(`../fixtures/${relativePath}`, import.meta.url), 'utf8');
   const eslint = new ESLint({
-    overrideConfig: [plugin.configs.recommended],
+    overrideConfig: [plugin.configs[configName]],
     overrideConfigFile: true,
   });
 
@@ -52,6 +52,46 @@ describe('recommended config adoption', () => {
     expect(result.messages).toHaveLength(0);
   });
 
+  it('grades provable rules as errors and inferred rules as warnings', async () => {
+    const [result] = await lintFixture('unsafe-main.ts');
+
+    const severityByRule = new Map(
+      result.messages.map((message) => [message.ruleId, message.severity]),
+    );
+
+    // Provable: an unsafe literal is right there in the source.
+    expect(severityByRule.get('electron-security/no-sandbox-disabled')).toBe(2);
+    expect(severityByRule.get('electron-security/no-context-isolation-disabled')).toBe(2);
+
+    // Inferred: reported because a mitigation was not recognised.
+    expect(severityByRule.get('electron-security/require-ipc-sender-validation')).toBe(1);
+    expect(severityByRule.get('electron-security/require-navigation-allowlist')).toBe(1);
+
+    expect(result.errorCount).toBeGreaterThan(0);
+    expect(result.warningCount).toBeGreaterThan(0);
+  });
+
+  it('promotes every rule to an error under strict', async () => {
+    const [result] = await lintFixture('unsafe-main.ts', 'strict');
+
+    expect(result.warningCount).toBe(0);
+    expect(result.messages.every((message) => message.severity === 2)).toBe(true);
+  });
+
+  it('keeps strict and recommended reporting the same findings', async () => {
+    const [recommended] = await lintFixture('unsafe-main.ts');
+    const [strict] = await lintFixture('unsafe-main.ts', 'strict');
+
+    expect(strict.messages.map((message) => message.ruleId).sort()).toEqual(
+      recommended.messages.map((message) => message.ruleId).sort(),
+    );
+  });
+
+  it('stays silent on the safe fixture under strict too', async () => {
+    const [result] = await lintFixture('safe-main.ts', 'strict');
+    expect(result.messages).toHaveLength(0);
+  });
+
   it('reports file protocol and allowpopups in renderer fixtures', async () => {
     const [result] = await lintFixture('unsafe-renderer.tsx');
     const ruleIds = result.messages.map((message) => message.ruleId).sort();
@@ -60,5 +100,79 @@ describe('recommended config adoption', () => {
       'electron-security/no-file-protocol-load-url',
       'electron-security/no-webview-allowpopups',
     ]);
+  });
+
+  it('reports the new main-process security rules through the published config', async () => {
+    const [result] = await lintFixture('unsafe-advanced-main.ts');
+    const ruleIds = result.messages.map((message) => message.ruleId).sort();
+
+    expect(ruleIds).toEqual([
+      'electron-security/require-csp',
+      'electron-security/require-permission-request-handler',
+      'electron-security/require-secure-fuses',
+    ]);
+
+    const severityByRule = new Map(
+      result.messages.map((message) => [message.ruleId, message.severity]),
+    );
+
+    expect(severityByRule.get('electron-security/require-csp')).toBe(1);
+    expect(severityByRule.get('electron-security/require-permission-request-handler')).toBe(1);
+    expect(severityByRule.get('electron-security/require-secure-fuses')).toBe(2);
+  });
+
+  it('keeps hardened CSP, permission, and fuse configuration silent', async () => {
+    const [result] = await lintFixture('safe-advanced-main.ts');
+
+    expect(result.messages).toHaveLength(0);
+  });
+
+  it('promotes every advanced finding to an error under strict', async () => {
+    const [recommended] = await lintFixture('unsafe-advanced-main.ts');
+    const [strict] = await lintFixture('unsafe-advanced-main.ts', 'strict');
+
+    expect(strict.messages.map((message) => message.ruleId).sort()).toEqual(
+      recommended.messages.map((message) => message.ruleId).sort(),
+    );
+    expect(strict.messages.every((message) => message.severity === 2)).toBe(true);
+  });
+
+  it('applies configured factories through the published package', async () => {
+    const eslint = new ESLint({
+      overrideConfig: [
+        plugin.configs.recommended,
+        {
+          rules: {
+            'electron-security/require-factory': [
+              'error',
+              {
+                factories: [
+                  {
+                    api: 'BrowserView',
+                    use: 'createSecureView',
+                    allowIn: ['src/security/views.ts'],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      overrideConfigFile: true,
+    });
+
+    const [blocked] = await eslint.lintText(
+      "const { BrowserView: View } = require('electron'); new View();",
+      { filePath: 'src/main.ts' },
+    );
+    const [allowed] = await eslint.lintText(
+      "const { BrowserView: View } = require('electron'); new View();",
+      { filePath: 'src/security/views.ts' },
+    );
+
+    expect(blocked.messages.map((message) => message.ruleId)).toEqual([
+      'electron-security/require-factory',
+    ]);
+    expect(allowed.messages).toHaveLength(0);
   });
 });

@@ -8,18 +8,6 @@ function getLiteralString(node: TSESTree.Node): string | undefined {
   return undefined;
 }
 
-function asExpression(node: TSESTree.Property['value']): TSESTree.Expression | undefined {
-  switch (node.type) {
-    case AST_NODE_TYPES.ArrayPattern:
-    case AST_NODE_TYPES.AssignmentPattern:
-    case AST_NODE_TYPES.ObjectPattern:
-    case AST_NODE_TYPES.TSEmptyBodyFunctionExpression:
-      return undefined;
-    default:
-      return node;
-  }
-}
-
 export function getPropertyName(node: TSESTree.Property['key']): string | undefined {
   if (node.type === AST_NODE_TYPES.Identifier) {
     return node.name;
@@ -52,21 +40,6 @@ export function getNestedObjectExpression(
   }
 
   return property.value;
-}
-
-export function findWindowOptionValue(
-  node: TSESTree.ObjectExpression,
-  optionName: string,
-): TSESTree.Expression | undefined {
-  const nestedWebPreferences = getNestedObjectExpression(node, 'webPreferences');
-  const nestedProperty = nestedWebPreferences ? getObjectProperty(nestedWebPreferences, optionName) : undefined;
-
-  if (nestedProperty) {
-    return asExpression(nestedProperty.value);
-  }
-
-  const topLevelProperty = getObjectProperty(node, optionName);
-  return topLevelProperty ? asExpression(topLevelProperty.value) : undefined;
 }
 
 export function getStaticBooleanValue(node: TSESTree.Node | null | undefined): boolean | undefined {

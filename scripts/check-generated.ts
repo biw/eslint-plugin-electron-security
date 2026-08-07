@@ -30,11 +30,14 @@ async function ensureRuleCoverageIsConsistent(): Promise<void> {
   const seenRecommendationNumbers = new Set<number>();
 
   for (const recommendation of recommendations) {
-    if (seenRecommendationNumbers.has(recommendation.number)) {
-      throw new Error(`Duplicate recommendation number ${recommendation.number}.`);
-    }
+    // Structural rules are not tied to a numbered checklist item.
+    if (recommendation.number !== undefined) {
+      if (seenRecommendationNumbers.has(recommendation.number)) {
+        throw new Error(`Duplicate recommendation number ${recommendation.number}.`);
+      }
 
-    seenRecommendationNumbers.add(recommendation.number);
+      seenRecommendationNumbers.add(recommendation.number);
+    }
 
     if (!recommendation.ruleId) {
       continue;

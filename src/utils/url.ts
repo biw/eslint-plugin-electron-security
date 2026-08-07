@@ -1,6 +1,7 @@
 const INSECURE_LOAD_PROTOCOLS = new Set(['ftp:', 'http:', 'ws:']);
 const REMOTE_PROTOCOLS = new Set(['http:', 'https:']);
-const SAFE_EXTERNAL_PROTOCOLS = new Set(['https:', 'mailto:', 'tel:']);
+export const DEFAULT_SAFE_EXTERNAL_PROTOCOLS = ['https:', 'mailto:', 'tel:'] as const;
+
 
 function getProtocol(value: string): string | undefined {
   try {
@@ -20,7 +21,21 @@ export function isRemoteUrl(value: string): boolean {
   return protocol ? REMOTE_PROTOCOLS.has(protocol) : false;
 }
 
-export function isSafeExternalUrl(value: string): boolean {
+/**
+ * Checks a URL against a caller-supplied protocol allowlist.
+ *
+ * Entries may be written with or without the trailing colon so that
+ * `['https', 'tel']` and `['https:', 'tel:']` both behave as expected.
+ */
+export function hasAllowedProtocol(value: string, allowedProtocols: readonly string[]): boolean {
   const protocol = getProtocol(value);
-  return protocol ? SAFE_EXTERNAL_PROTOCOLS.has(protocol) : false;
+
+  if (!protocol) {
+    return false;
+  }
+
+  return allowedProtocols.some((allowed) => {
+    const normalized = allowed.endsWith(':') ? allowed : `${allowed}:`;
+    return normalized.toLowerCase() === protocol.toLowerCase();
+  });
 }
