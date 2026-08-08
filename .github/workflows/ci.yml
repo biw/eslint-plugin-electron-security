@@ -25,3 +25,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm run verify
+
+  publish:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/publish.yml
+    permissions:
+      contents: write
+      id-token: write
