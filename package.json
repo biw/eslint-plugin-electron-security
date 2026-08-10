@@ -1,6 +1,6 @@
 {
   "name": "eslint-plugin-electron-security",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "Baseline ESLint guardrails for common Electron security footguns.",
   "license": "MIT",
   "type": "module",

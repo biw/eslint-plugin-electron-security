@@ -83,7 +83,7 @@ const plugin: any = {
     // Keep in step with package.json. tests/unit/plugin-meta.test.ts fails if
     // these drift apart; importing package.json here would inline the whole
     // manifest, including devDependencies, into the published bundle.
-    version: '0.3.0',
+    version: '1.0.0',
   },
   rules,
   configs: {},
